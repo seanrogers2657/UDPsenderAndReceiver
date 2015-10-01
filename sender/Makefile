@@ -1,2 +1,2 @@
 all:
-	javac Sender.java
+	javac Sender.java ReceiverThread.java
