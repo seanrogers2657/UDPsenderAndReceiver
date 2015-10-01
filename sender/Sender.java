@@ -81,7 +81,7 @@ public class Sender {
                 System.out.println("For loop out of bounds. ");
             }
 
-            for(int i = windowPoint; i < windowPoint + windowSize; i++){
+            for(int i = windowPoint; i < (windowPoint + windowSize) && i < window.length; i++){
                 // send the packet
                 if(!window[i]) {
                     DatagramPacket currentPacket = ThePackets.get(i);
