@@ -1,2 +1,0 @@
-all: 
-	javac Receiver.java
