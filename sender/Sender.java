@@ -9,18 +9,20 @@ import java.net.DatagramPacket;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.nio.ByteBuffer;
+import java.util.*;
 
 public class Sender {
     //String ip = "localhost";
     String ip = "153.90.39.124";
     int port = 9877;
     int destPort = 9876;
-    int numberOfPackets = 100;
+    int numberOfPackets = 10;
     ArrayList<DatagramPacket> ThePackets = new ArrayList<DatagramPacket>();
-    int[] window = new int[numberOfPackets];
+    int[] window;
+	ArrayList<Integer> dont;
     DatagramSocket senderSocket;
     int windowPoint = 0;
-    int windowSize = 50;
+    int windowSize = 5;
 	int timeout = 3;
 
     public void createPackets() {
@@ -72,6 +74,15 @@ public class Sender {
         }
     }
 
+	public boolean checkIfExists(int number) {
+		int index = dont.indexOf(number);
+		if (index > -1) {
+			dont.remove(index);
+			return true;
+		}
+		return false;
+	}
+
 	public void sendPackets() throws Exception {
 		while (goTime()) {
 			for (int i = windowPoint; (i < windowPoint + windowSize) && (i < window.length); i++) {
@@ -91,22 +102,26 @@ public class Sender {
 	                System.out.println("No packets in ThePackets list. ");
 	                System.exit(1);
 	            }
+				DatagramPacket currentPacket = ThePackets.get(number);
 
 				// send the packet
-				if(window[number] != 2 && number >= windowPoint && number < windowPoint + windowSize) {
-					DatagramPacket currentPacket = ThePackets.get(number);
+				if(window[number] != 2 && number >= windowPoint && number < windowPoint + windowSize && !checkIfExists(number)) {
 					senderSocket.send(currentPacket);
-
-					// read data
-					ByteArrayInputStream bais = new ByteArrayInputStream(currentPacket.getData());
-					DataInputStream dis = new DataInputStream(bais);
-					char type = dis.readChar();
-					int size = dis.readInt();
-
-					System.out.println("Packet Sent, " + type + size);
 				}
+				// read data
+				ByteArrayInputStream bais = new ByteArrayInputStream(currentPacket.getData());
+				DataInputStream dis = new DataInputStream(bais);
+				char type = dis.readChar();
+				int size = dis.readInt();
+
+				System.out.print("Packet Sent, " + type + size + " ");
+				getWindow();
 
 	            TimeUnit.SECONDS.sleep(timeout);
+
+				if (window[number] != 2) {
+					System.out.println("Packet " + number + " times out, resend packet " + number);
+				}
 			} catch (Exception e) {
 				System.out.println(e);
 			}
@@ -161,9 +176,24 @@ public class Sender {
     }
 
 	public void getWindow() {
-		int endingWindow = windowPoint + windowSize - 1;
-		System.out.print("Window: [" + windowPoint + ", " + endingWindow + "]");
-		System.out.println();
+		String theString = "[";
+		for (int i = windowPoint; i < windowPoint + windowSize; i++) {
+			if (i < numberOfPackets) {
+				theString += i;
+				if (window[i] == 1) {
+					theString += "*";
+				} else if (window[i] == 2) {
+					theString += "#";
+				}
+			} else {
+				theString += "-";
+			}
+			if (i != windowPoint + windowSize - 1) {
+				theString += ",";
+			}
+		}
+		theString += "]";
+		System.out.println(theString);
 	}
 
     public void printPackets() {
@@ -186,6 +216,29 @@ public class Sender {
         try {
             System.out.println("Running...");
             Sender program = new Sender();
+
+			Scanner scan = new Scanner(System.in);
+			System.out.print("Enter number of packets: ");
+			String a = scan.nextLine();
+			program.numberOfPackets = Integer.parseInt(a);
+
+			do {
+				System.out.print("Enter window size: ");
+				String b = scan.nextLine();
+				program.windowSize = Integer.parseInt(b);
+			}
+			while (program.windowSize > (program.numberOfPackets / 2));
+
+			System.out.print("Enter packets to be dropped: ");
+			String c = scan.nextLine();
+			String temp[] = c.split(" ");
+			program.dont = new ArrayList<Integer>();
+
+			for (int i = 0; i < temp.length; i++) {
+				program.dont.add(Integer.parseInt(temp[i]));
+			}
+
+			program.window = new int[program.numberOfPackets];
             program.createPackets();
             program.sendConfirmation();
         } catch (Exception e) {

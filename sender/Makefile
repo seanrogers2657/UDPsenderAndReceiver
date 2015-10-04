@@ -1,2 +1,9 @@
-all:
-	javac Sender.java ReceiverThread.java
+COMP = javac
+RUN = java
+SRCS = Sender.java ReceiverThread.java
+
+compile: $(SRCS)
+	$(COMP) $(SRCS)
+
+run: compile
+	$(RUN) Sender
