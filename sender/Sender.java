@@ -11,27 +11,29 @@ import java.util.concurrent.TimeUnit;
 import java.nio.ByteBuffer;
 
 public class Sender {
-    String ip = "153.90.37.97";
+    //String ip = "localhost";
+    String ip = "153.90.39.124";
     int port = 9877;
     int destPort = 9876;
-    int numberOfPackets = 10;
+    int numberOfPackets = 100;
     ArrayList<DatagramPacket> ThePackets = new ArrayList<DatagramPacket>();
-    Boolean[] window = new Boolean[numberOfPackets];
+    int[] window = new int[numberOfPackets];
     DatagramSocket senderSocket;
     int windowPoint = 0;
-    int windowSize = 4;
+    int windowSize = 50;
+	int timeout = 3;
 
     public void createPackets() {
         for(int i = 0; i < numberOfPackets; i++) {
             try {
                 InetAddress IPAddress = InetAddress.getByName(ip);
-                byte[] buffer = ByteBuffer.allocate(1024).putChar('p').putInt(i).putInt(10).array();
+                byte[] buffer = ByteBuffer.allocate(1024).putChar('p').putInt(i).array();
                 DatagramPacket sendPkt = new DatagramPacket(buffer, buffer.length, IPAddress, destPort);
                 ThePackets.add(sendPkt);
             } catch (Exception e) {
                 System.out.println(e);
             }
-            window[i] = false;
+            window[i] = 0;
         }
     }
 
@@ -39,7 +41,7 @@ public class Sender {
         // create packet
         senderSocket = new DatagramSocket(port);
         InetAddress IPAddress = InetAddress.getByName(ip);
-        byte[] buffer = ByteBuffer.allocate(1024).putChar('c').putInt(4).putInt(10).array();
+        byte[] buffer = ByteBuffer.allocate(1024).putChar('c').putInt(windowSize).putInt(numberOfPackets).array();
         DatagramPacket confirm = new DatagramPacket(buffer, buffer.length, IPAddress, destPort);
 
         // send packet
@@ -47,7 +49,6 @@ public class Sender {
         System.out.println("Confirmation Packet Sent");
 
         // receive ack
-        senderSocket.setSoTimeout(5000);
         byte[] rcvData = new byte[1024];
         DatagramPacket rcvPkt = new DatagramPacket(rcvData, rcvData.length);
         senderSocket.receive(rcvPkt);
@@ -71,56 +72,65 @@ public class Sender {
         }
     }
 
-    public void sendPackets() {
-        try {
-            if(ThePackets.size() <= 0) {
-                System.out.println("No packets in ThePackets list. ");
-                System.exit(1);
-            }
-            if((windowPoint + windowSize) < window.length) {
-                System.out.println("For loop out of bounds. ");
-            }
+	public void sendPackets() throws Exception {
+		while (goTime()) {
+			for (int i = windowPoint; (i < windowPoint + windowSize) && (i < window.length); i++) {
+				if (window[i] == 0) {
+					window[i] = 1;
+					(new SenderThread(this, i)).start();
+				}
+			}
+			TimeUnit.MILLISECONDS.sleep(5);
+		}
+	}
 
-            for(int i = windowPoint; i < (windowPoint + windowSize) && i < window.length; i++){
-                // send the packet
-                if(!window[i]) {
-                    DatagramPacket currentPacket = ThePackets.get(i);
-                    senderSocket.send(currentPacket);
+	public void sendPacket(int number) {
+		while (window[number] != 2){
+			try {
+				if(ThePackets.size() <= 0) {
+	                System.out.println("No packets in ThePackets list. ");
+	                System.exit(1);
+	            }
 
-                    // read data
-                    ByteArrayInputStream bais = new ByteArrayInputStream(currentPacket.getData());
-                    DataInputStream dis = new DataInputStream(bais);
-                    char type = dis.readChar();
-                    int size = dis.readInt();
+				// send the packet
+				if(window[number] != 2 && number >= windowPoint && number < windowPoint + windowSize) {
+					DatagramPacket currentPacket = ThePackets.get(number);
+					senderSocket.send(currentPacket);
 
-                    System.out.println("Packet Sent, " + type + size);
-                    printWindow();
-                } else {
-                    System.out.println("Already confirmed: " + i);
-                }
-            }
+					// read data
+					ByteArrayInputStream bais = new ByteArrayInputStream(currentPacket.getData());
+					DataInputStream dis = new DataInputStream(bais);
+					char type = dis.readChar();
+					int size = dis.readInt();
 
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-    }
+					System.out.println("Packet Sent, " + type + size);
+				}
+
+	            TimeUnit.SECONDS.sleep(timeout);
+			} catch (Exception e) {
+				System.out.println(e);
+			}
+		}
+	}
 
     public Boolean goTime() {
-        Boolean isItTrue = false;
+        Boolean runIt = false;
         for(int i = 0; i < window.length; i++) {
-            if(window[i] == false) {
-                isItTrue = true;
+            if(window[i] != 2) {
+                runIt = true;
                 break;
             }
         }
-        return isItTrue;
+		if (!runIt) {
+			System.out.println("DEAD");
+		}
+        return runIt;
     }
 
     public void receivePackets() {
         // receive ack
         while(goTime()) {
             try {
-                senderSocket.setSoTimeout(5000);
                 byte[] rcvData = new byte[1024];
                 DatagramPacket rcvPkt = new DatagramPacket(rcvData, rcvData.length);
                 senderSocket.receive(rcvPkt);
@@ -132,20 +142,29 @@ public class Sender {
                 char type = dis.readChar();
                 int size = dis.readInt();
 
-                System.out.println("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size);
+                System.out.print("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size + " ");
+				getWindow();
 
                 if(type == 'p' && (size >= windowPoint && size < window.length)) {
-                    System.out.println("Increase Window Size..." + size + ", length: " + window.length);
-                    window[size] = true;
-                    windowPoint++;
-                    sendPackets();
+					window[size] = 2;
+					if (size == windowPoint) {
+						while (size < window.length && window[size] == 2) {
+							windowPoint++;
+							size++;
+						}
+					}
                 }
-                printWindow();
             } catch (Exception e) {
                 System.out.println(e);
             }
         }
     }
+
+	public void getWindow() {
+		int endingWindow = windowPoint + windowSize - 1;
+		System.out.print("Window: [" + windowPoint + ", " + endingWindow + "]");
+		System.out.println();
+	}
 
     public void printPackets() {
         System.out.println("Packets: " + ThePackets.size());
@@ -158,7 +177,7 @@ public class Sender {
     public void printWindow() {
         System.out.println("The Window: ");
         for(int i = 0; i < window.length; i++) {
-            System.out.println(window[i]);
+            System.out.print(window[i] + ", ");
         }
         System.out.println();
     }
@@ -168,9 +187,7 @@ public class Sender {
             System.out.println("Running...");
             Sender program = new Sender();
             program.createPackets();
-            program.printPackets();
             program.sendConfirmation();
-            program.printPackets();
         } catch (Exception e) {
             System.out.println(e);
         }

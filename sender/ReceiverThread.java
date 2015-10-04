@@ -1,4 +1,3 @@
-
 public class ReceiverThread extends java.lang.Thread {
     Sender sender;
 
