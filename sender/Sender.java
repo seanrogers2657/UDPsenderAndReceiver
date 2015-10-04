@@ -19,7 +19,7 @@ public class Sender {
     int numberOfPackets = 10;
     ArrayList<DatagramPacket> ThePackets = new ArrayList<DatagramPacket>();
     int[] window;
-	ArrayList<Integer> dont;
+	ArrayList<Integer> dont = new ArrayList<Integer>();
     DatagramSocket senderSocket;
     int windowPoint = 0;
     int windowSize = 5;
@@ -39,39 +39,45 @@ public class Sender {
         }
     }
 
-    public void sendConfirmation() throws Exception {
-        // create packet
-        senderSocket = new DatagramSocket(port);
-        InetAddress IPAddress = InetAddress.getByName(ip);
-        byte[] buffer = ByteBuffer.allocate(1024).putChar('c').putInt(windowSize).putInt(numberOfPackets).array();
-        DatagramPacket confirm = new DatagramPacket(buffer, buffer.length, IPAddress, destPort);
+    public void sendConfirmation() {
+        try {
+			// create packet
+			InetAddress IPAddress = InetAddress.getByName(ip);
+	        byte[] buffer = ByteBuffer.allocate(1024).putChar('c').putInt(windowSize).putInt(numberOfPackets).array();
+	        DatagramPacket confirm = new DatagramPacket(buffer, buffer.length, IPAddress, destPort);
 
-        // send packet
-        senderSocket.send(confirm);
-        System.out.println("Confirmation Packet Sent");
+	        // send packet
+	        senderSocket.send(confirm);
+	        System.out.println("Confirmation Packet Sent");
 
-        // receive ack
-        byte[] rcvData = new byte[1024];
-        DatagramPacket rcvPkt = new DatagramPacket(rcvData, rcvData.length);
-        senderSocket.receive(rcvPkt);
-        IPAddress = rcvPkt.getAddress();
-        int port = rcvPkt.getPort();
+	        // receive ack
+	        byte[] rcvData = new byte[1024];
+	        DatagramPacket rcvPkt = new DatagramPacket(rcvData, rcvData.length);
+			senderSocket.setSoTimeout(5000);
+	        senderSocket.receive(rcvPkt);
+	        IPAddress = rcvPkt.getAddress();
+	        int port = rcvPkt.getPort();
 
-        // read data
-        ByteArrayInputStream bais = new ByteArrayInputStream(rcvPkt.getData());
-        DataInputStream dis = new DataInputStream(bais);
-        char type = dis.readChar();
-        int size = dis.readInt();
+	        // read data
+	        ByteArrayInputStream bais = new ByteArrayInputStream(rcvPkt.getData());
+	        DataInputStream dis = new DataInputStream(bais);
+	        char type = dis.readChar();
+	        int size = dis.readInt();
 
-        System.out.println("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size);
+	        System.out.println("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size);
 
-        if(type == 'c' && size == 0) {
-            System.out.println("Connection Confirmed.\n");
-            (new ReceiverThread(this)).start();
-            sendPackets();
-        } else {
-            System.out.println("BAD STUFF - Connection denied. ");
-        }
+			senderSocket.setSoTimeout(0);
+	        if(type == 'c' && size == 0) {
+	            System.out.println("Connection Confirmed.\n");
+	            (new ReceiverThread(this)).start();
+	            sendPackets();
+	        } else {
+	            System.out.println("Connection denied. ");
+				sendConfirmation();
+	        }
+		} catch (Exception e) {
+			sendConfirmation();
+		}
     }
 
 	public boolean checkIfExists(int number) {
@@ -91,7 +97,7 @@ public class Sender {
 					(new SenderThread(this, i)).start();
 				}
 			}
-			TimeUnit.MILLISECONDS.sleep(5);
+			TimeUnit.MILLISECONDS.sleep(50);
 		}
 	}
 
@@ -114,8 +120,7 @@ public class Sender {
 				char type = dis.readChar();
 				int size = dis.readInt();
 
-				System.out.print("Packet Sent, " + type + size + " ");
-				getWindow();
+				System.out.println("Packet Sent, " + type + size + " " + getWindow());
 
 	            TimeUnit.SECONDS.sleep(timeout);
 
@@ -157,8 +162,7 @@ public class Sender {
                 char type = dis.readChar();
                 int size = dis.readInt();
 
-                System.out.print("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size + " ");
-				getWindow();
+                System.out.println("Packet Received, length: " + rcvData.length + ", ip: " + IPAddress + ", data: " + type + size + " " + getWindow());
 
                 if(type == 'p' && (size >= windowPoint && size < window.length)) {
 					window[size] = 2;
@@ -175,7 +179,7 @@ public class Sender {
         }
     }
 
-	public void getWindow() {
+	public String getWindow() {
 		String theString = "[";
 		for (int i = windowPoint; i < windowPoint + windowSize; i++) {
 			if (i < numberOfPackets) {
@@ -193,7 +197,7 @@ public class Sender {
 			}
 		}
 		theString += "]";
-		System.out.println(theString);
+		return theString;
 	}
 
     public void printPackets() {
@@ -213,36 +217,42 @@ public class Sender {
     }
 
     public static void main(String[] args) {
-        try {
-            System.out.println("Running...");
-            Sender program = new Sender();
+		while (true) {
+			try {
+	            System.out.println("Running...");
+	            Sender program = new Sender();
 
-			Scanner scan = new Scanner(System.in);
-			System.out.print("Enter number of packets: ");
-			String a = scan.nextLine();
-			program.numberOfPackets = Integer.parseInt(a);
+				Scanner scan = new Scanner(System.in);
+				System.out.print("Enter number of packets: ");
+				String a = scan.nextLine();
+				program.numberOfPackets = Integer.parseInt(a);
 
-			do {
-				System.out.print("Enter window size: ");
-				String b = scan.nextLine();
-				program.windowSize = Integer.parseInt(b);
-			}
-			while (program.windowSize > (program.numberOfPackets / 2));
+				do {
+					System.out.print("Enter window size: ");
+					String b = scan.nextLine();
+					program.windowSize = Integer.parseInt(b);
+				}
+				while (program.windowSize > (program.numberOfPackets / 2));
 
-			System.out.print("Enter packets to be dropped: ");
-			String c = scan.nextLine();
-			String temp[] = c.split(" ");
-			program.dont = new ArrayList<Integer>();
+				System.out.print("Enter packets to be dropped: ");
+				String c = scan.nextLine();
+				if (!c.isEmpty()) {
+					String temp[] = c.split(" ");
 
-			for (int i = 0; i < temp.length; i++) {
-				program.dont.add(Integer.parseInt(temp[i]));
-			}
+					for (int i = 0; i < temp.length; i++) {
+						program.dont.add(Integer.parseInt(temp[i]));
+					}
+				}
 
-			program.window = new int[program.numberOfPackets];
-            program.createPackets();
-            program.sendConfirmation();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
+				program.senderSocket = new DatagramSocket(program.port);
+
+				program.window = new int[program.numberOfPackets];
+	            program.createPackets();
+	            program.sendConfirmation();
+				break;
+	        } catch (Exception e) {
+	            System.out.println(e);
+	        }
+		}
     }
 }
